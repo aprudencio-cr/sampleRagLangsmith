@@ -228,8 +228,8 @@ def push_dataset(client: Client | None = None) -> None:
     This function does the following:
       1. Instantiates a LangSmith Client to connect to the LangSmith backend.
       2. Queries existing datasets to check if the target dataset already exists (ensuring idempotency).
-      3. Creates a new dataset if it does not exist.
-      4. Pushed the curated Q&A pairs as evaluation benchmark examples.
+      3. Cleans up any duplicate examples (by question text) that might have been added in previous runs.
+      4. Pushes only the examples that are not already present in the dataset.
     """
     # 1. Initialize client: Client handles authentication using LANGSMITH_API_KEY env variable
     if client is None:
@@ -238,7 +238,7 @@ def push_dataset(client: Client | None = None) -> None:
     # 2. Check for existing dataset: prevents creating duplicate datasets on successive script runs
     existing = [d for d in client.list_datasets() if d.name == DATASET_NAME]
     if existing:
-        print(f"[push_dataset] Dataset '{DATASET_NAME}' already exists — skipping creation.")
+        print(f"[push_dataset] Dataset '{DATASET_NAME}' already exists.")
         dataset = existing[0]
     else:
         # 3. Create dataset: creates the container in LangSmith UI under the Datasets & Testing tab
@@ -251,10 +251,42 @@ def push_dataset(client: Client | None = None) -> None:
         )
         print(f"[push_dataset] Created dataset '{DATASET_NAME}' (id={dataset.id})")
 
-    # 4. Add examples: Pushes inputs (what the RAG pipeline receives) and outputs (the expected ground truth)
-    client.create_examples(
-        dataset_id=dataset.id,
-        examples=EXAMPLES,
-    )
-    print(f"[push_dataset] Pushed {len(EXAMPLES)} examples to '{DATASET_NAME}'")
+    # 4. Fetch existing examples to check for duplicates and prevent them
+    existing_examples = list(client.list_examples(dataset_id=dataset.id))
+    
+    # 5. Deduplicate existing examples (in case of multiple historical script runs)
+    seen_questions = set()
+    duplicates_deleted = 0
+    unique_existing_questions = set()
+    
+    for example in existing_examples:
+        question = example.inputs.get("question") if example.inputs else None
+        if not question:
+            continue
+        
+        if question in seen_questions:
+            # We found a duplicate copy, delete it from the LangSmith dataset
+            client.delete_example(example.id)
+            duplicates_deleted += 1
+        else:
+            seen_questions.add(question)
+            unique_existing_questions.add(question)
+            
+    if duplicates_deleted > 0:
+        print(f"[push_dataset] Cleaned up {duplicates_deleted} duplicate example(s) from '{DATASET_NAME}'.")
+
+    # 6. Filter new examples: only add examples whose questions are not already in the dataset
+    examples_to_add = [
+        ex for ex in EXAMPLES
+        if ex["inputs"].get("question") not in unique_existing_questions
+    ]
+
+    if examples_to_add:
+        client.create_examples(
+            dataset_id=dataset.id,
+            examples=examples_to_add,
+        )
+        print(f"[push_dataset] Pushed {len(examples_to_add)} new example(s) to '{DATASET_NAME}'.")
+    else:
+        print(f"[push_dataset] All examples are already present in '{DATASET_NAME}'. No new examples to push.")
 
