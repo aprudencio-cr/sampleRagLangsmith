@@ -1,0 +1,76 @@
+ARTIFICIAL INTELLIGENCE AND LARGE LANGUAGE MODELS: AN OVERVIEW
+
+INTRODUCTION TO ARTIFICIAL INTELLIGENCE
+
+Artificial intelligence (AI) is a branch of computer science focused on building systems that can perform tasks that would normally require human intelligence. These tasks include understanding natural language, recognising images, solving problems, and making decisions. AI encompasses many subfields, including machine learning, deep learning, natural language processing (NLP), and computer vision.
+
+Machine learning is the study of algorithms that allow computers to learn from data rather than being explicitly programmed. Instead of writing rules by hand, a machine learning model identifies patterns in large datasets and improves its performance over time. Deep learning is a subfield of machine learning that uses artificial neural networks with many layers—hence the term "deep"—to model complex patterns in data.
+
+
+LARGE LANGUAGE MODELS
+
+A large language model (LLM) is a type of deep learning model trained on massive amounts of text data to understand and generate human language. LLMs learn statistical relationships between words, phrases, and concepts by predicting the next token in a sequence. After training on hundreds of billions of words, these models develop a rich representation of language, world knowledge, and reasoning ability.
+
+Well-known large language models include GPT-4, Claude, Gemini, and the open-source Llama family. These models can write code, answer questions, summarise documents, translate languages, and hold multi-turn conversations.
+
+The transformer architecture, introduced in the 2017 paper "Attention Is All You Need," is the foundation of almost all modern LLMs. Transformers use a mechanism called self-attention that allows the model to weigh the importance of every word in the input when producing each output token, enabling highly parallelised training and superior performance on sequential data.
+
+Prompt engineering is the practice of crafting and refining the text inputs given to a language model to guide its outputs toward a desired format, tone, or content. Well-designed prompts can dramatically improve an LLM's performance without any additional training.
+
+
+RETRIEVAL-AUGMENTED GENERATION (RAG)
+
+Retrieval-Augmented Generation, or RAG, is a technique that enhances LLM responses by combining the model's internal knowledge with information retrieved from an external knowledge base at inference time. In a RAG system, when a user submits a question, relevant documents are first retrieved from a vector store and then provided as additional context to the LLM, which uses them to generate a grounded answer.
+
+RAG addresses a critical limitation of LLMs: their knowledge is frozen at the time of training. By attaching a retrieval step, RAG enables the model to answer questions about documents, databases, or events that postdate its training cutoff. RAG also reduces hallucination because the model is anchored to concrete source material.
+
+The main steps in a RAG pipeline are:
+1. Ingestion: Source documents are loaded, split into smaller chunks, embedded into vector representations, and stored in a vector database.
+2. Retrieval: When a query arrives, it is embedded and compared against stored vectors using similarity search (typically cosine similarity). The top-k most similar chunks are retrieved.
+3. Generation: The retrieved chunks are concatenated into a context string and passed, along with the original question, to an LLM, which produces a final answer grounded in the retrieved context.
+
+An embedding is a dense numerical vector that represents the semantic meaning of a piece of text. Embedding models map text to high-dimensional vector spaces where semantically similar texts are close together. In RAG, both documents and queries are embedded so their similarity can be measured numerically.
+
+A vector store (also called a vector database) is a specialised database that indexes and stores embeddings and supports fast nearest-neighbour search. Popular vector stores include ChromaDB, Pinecone, Weaviate, Qdrant, and pgvector.
+
+
+LANGCHAIN
+
+LangChain is an open-source Python (and JavaScript) framework for building applications powered by language models. It provides a modular set of abstractions—chains, retrievers, document loaders, prompt templates, output parsers, memory, and agents—along with integrations with dozens of LLM providers, vector stores, and tools.
+
+A LangChain retriever is an interface that, given a query string, returns a list of relevant documents. Retrievers abstract over different vector stores and search strategies, making it easy to swap backends without changing application code.
+
+A LangChain chain is a sequence of components composed together so that the output of one step becomes the input of the next. For example, a simple RAG chain might consist of a retriever, a prompt template, and an LLM, connected in a pipeline.
+
+LangChain also integrates with Ollama, allowing developers to run local open-source models without any cloud API calls. The langchain-ollama package provides OllamaLLM for text generation and OllamaEmbeddings for creating embeddings using models served by Ollama.
+
+
+LANGSMITH
+
+LangSmith is a platform developed by LangChain for debugging, monitoring, testing, and evaluating LLM applications. It provides observability into every step of a chain or agent run by automatically capturing traces that include all inputs, retrieved documents, intermediate steps, and final outputs.
+
+Tracing in LangSmith refers to the automatic logging of every step in an LLM application so that developers can inspect, replay, and debug runs through a web-based UI. Tracing is enabled by setting two environment variables: LANGSMITH_TRACING=true and LANGSMITH_API_KEY=<your key>. Once enabled, all LangChain operations are automatically traced without any code changes.
+
+The @traceable decorator from the langsmith SDK can be applied to any Python function to capture it in a trace. This is useful for custom code that is not part of a LangChain chain. Each decorated function call creates a run in LangSmith with the function's inputs, outputs, and execution time logged automatically.
+
+A LangSmith dataset is a collection of input/output example pairs stored in LangSmith and used as a benchmark for evaluating an LLM application. Datasets are created either manually through the UI, programmatically via the LangSmith Python client, or by curating examples from real production traces.
+
+LangSmith supports automated evaluation through its evaluate() API. Evaluators are functions (or LLM-based judges) that score a model's output on a given example. Common RAG evaluation metrics include:
+
+- Correctness: Does the generated answer correctly address the question compared to a known reference answer? This is measured using an LLM-as-a-judge that compares the prediction to the ground truth.
+
+- Groundedness (also called faithfulness): Is the answer fully supported by the retrieved source documents? A grounded answer contains no claims that are not present in the retrieved context. This metric helps detect hallucinations.
+
+- Retrieval relevance: Are the chunks retrieved by the vector store actually relevant and useful for answering the question? Poor retrieval is one of the most common failure modes in RAG systems.
+
+LangSmith Experiments allow teams to compare multiple runs of the same evaluation suite side by side—for example, before and after changing the prompt, swapping the LLM, or adjusting chunking parameters. This makes it easy to measure the impact of changes on end-to-end RAG performance.
+
+
+OLLAMA
+
+Ollama is an open-source tool that allows developers to run large language models locally on their own hardware. It provides a simple command-line interface and a local REST API (by default at http://localhost:11434) compatible with many LLM clients. Popular models available through Ollama include Llama 3.2, Mistral, Gemma, and Phi-3. Ollama also supports embedding models such as nomic-embed-text, which can be used to generate vector embeddings for RAG pipelines entirely on-device without any cloud API calls.
+
+
+CHROMADB
+
+ChromaDB is an open-source vector database designed for AI applications. It supports both in-memory and on-disk persistence modes, making it a popular choice for local RAG prototypes. ChromaDB integrates natively with LangChain through the langchain-community package. When a persist_directory is provided, ChromaDB saves the vector index to disk, so embeddings do not need to be regenerated on every application restart.
