@@ -22,11 +22,20 @@ from langsmith_utils.evaluate import run_evaluation
 
 
 def main() -> None:
+    """
+    Main entry point to execute the LangSmith evaluation suite.
+    
+    Parses an optional experiment prefix from command-line arguments,
+    then runs the automated test benchmark and outputs the results summary.
+    """
+    # 1. Parse experiment prefix: helps identify different models/versions in the LangSmith UI
     prefix = sys.argv[1] if len(sys.argv) > 1 else "rag-v1"
 
     print("=" * 60)
     print(f"LANGSMITH EVALUATION  (experiment prefix: {prefix})")
     print("=" * 60)
+    
+    # 2. Run the evaluation suite defined in the utility package
     run_evaluation(experiment_prefix=prefix)
 
 

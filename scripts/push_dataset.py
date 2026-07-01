@@ -20,11 +20,23 @@ from langsmith_utils.push_dataset import push_dataset
 
 
 def main() -> None:
+    """
+    Connects to LangSmith and uploads the evaluation dataset.
+    
+    Initializes a fresh LangSmith Client which automatically loads configuration
+    and credentials from environment variables (LANGSMITH_API_KEY).
+    It then invokes the helper utility to create the dataset and register the examples.
+    """
     print("=" * 60)
     print("LANGSMITH DATASET PUSH")
     print("=" * 60)
+    
+    # 1. Instantiate the LangSmith Client connection
     client = Client()
+    
+    # 2. Run the push utility function to create and populate the benchmark dataset
     push_dataset(client=client)
+    
     print("\nDone! Open LangSmith UI -> Datasets to view your examples.")
 
 

@@ -17,34 +17,65 @@ from langsmith.evaluation import RunEvaluator, EvaluationResult
 from langchain_classic.evaluation import load_evaluator
 
 class LangChainStringEvaluator(RunEvaluator):
-    """Custom wrapper for LangChain evaluators matching the deprecated LangSmith class."""
+    """
+    Custom adapter that wraps LangChain-classic string evaluators and integrates
+    them with the LangSmith automated evaluation pipeline (`evaluate()`).
+
+    This class subclasses LangSmith's `RunEvaluator`. It implements the required
+    `evaluate_run` method, which is called automatically by LangSmith for each run.
+    """
     def __init__(
         self,
         evaluator_name: str,
         config: dict | None = None,
         prepare_data: callable | None = None,
     ):
+        """
+        Args:
+            evaluator_name: The name of the built-in LangChain evaluator to load
+                            (e.g., "labeled_score_string" or "score_string").
+            config: A dictionary of configuration options passed directly to
+                    `load_evaluator` (e.g., the criteria prompt, normalize_by factor,
+                    and LLM to act as the judge).
+            prepare_data: A mapping callable that accepts `(run, example)` and maps
+                          them to a dict containing {"prediction", "reference", "input"}.
+                          This aligns the RAG pipeline run outputs and dataset outputs
+                          with the keys expected by the LangChain evaluator.
+        """
         self.evaluator_name = evaluator_name
         self.config = config or {}
         self.prepare_data = prepare_data
+        
+        # Load the corresponding LangChain evaluator model using langchain-classic
         self.evaluator = load_evaluator(evaluator_name, **self.config)
 
     def evaluate_run(self, run, example=None, **kwargs) -> EvaluationResult:
+        """
+        Called by the LangSmith runner for each test case run.
+
+        Extracts inputs and prediction outputs, runs the loaded LangChain evaluator
+        via Ollama, and packages the result into a LangSmith EvaluationResult object.
+        """
+        # 1. Map data to the keys the evaluator expects (prediction, reference, input)
         if self.prepare_data:
             data = self.prepare_data(run, example)
         else:
+            # Fallback default mapping
             data = {
                 "prediction": run.outputs.get("output", "") if run.outputs else "",
                 "reference": example.outputs.get("output", "") if example and example.outputs else "",
                 "input": example.inputs.get("input", "") if example and example.inputs else "",
             }
 
+        # 2. Run evaluation logic using the underlying LangChain string evaluator.
+        # This calls the LLM-as-a-judge (Ollama) with the criteria prompts
         res = self.evaluator.evaluate_strings(
             prediction=data.get("prediction"),
             reference=data.get("reference"),
             input=data.get("input"),
         )
 
+        # 3. Extract the feedback score key (e.g., "correctness", "groundedness")
         criteria = self.config.get("criteria")
         if isinstance(criteria, dict):
             key = list(criteria.keys())[0]
@@ -53,6 +84,7 @@ class LangChainStringEvaluator(RunEvaluator):
         else:
             key = self.evaluator_name
 
+        # 4. Return the result which will be automatically logged to the LangSmith UI
         return EvaluationResult(
             key=key,
             score=res.get("score"),
@@ -69,9 +101,17 @@ from rag.pipeline import rag_pipeline
 # Helper: wrap the RAG pipeline so it accepts the dict format LangSmith uses
 # ---------------------------------------------------------------------------
 def _make_target(retriever):
-    """Return a target function compatible with langsmith.evaluate()."""
+    """
+    Return a target prediction function compatible with the LangSmith `evaluate()` call.
 
+    LangSmith's test runner expects a prediction function that accepts a dictionary
+    representing a single dataset example input (e.g., `{"question": "..."}`) and returns
+    a dictionary representing the system's output (e.g., `{"answer": "...", "source_documents": [...]}`).
+    
+    This function wraps our RAG pipeline, maps the input question key correctly, and returns it.
+    """
     def target(inputs: dict) -> dict:
+        # Extract the user's question from the example row inputs
         return rag_pipeline(question=inputs["question"], retriever=retriever)
 
     return target
@@ -83,21 +123,26 @@ def _make_target(retriever):
 
 def _build_evaluators():
     """
-    Build three string evaluators.
+    Configure and build the LLM-as-a-judge string evaluators.
 
-    LangChainStringEvaluator wraps langchain evaluation criteria and
-    automatically uses the local Ollama LLM to grade each response.
+    We define three evaluators that grade the pipeline using a local Ollama LLM:
+      1. Correctness (labeled_score_string): Compares prediction to the reference answer.
+      2. Groundedness (score_string): Checks if prediction is supported by retrieved context.
+      3. Retrieval Relevance (score_string): Checks if retrieved context matches the question.
     """
     from langchain_ollama import OllamaLLM
 
+    # Initialize the LLM judge model. We set temperature=0.0 to ensure consistent,
+    # reproducible grading criteria.
     judge_llm = OllamaLLM(
         model=OLLAMA_MODEL,
         base_url=OLLAMA_BASE_URL,
         temperature=0.0,
     )
 
+    # 1. Correctness Evaluator: Grades whether the model's answer is accurate compared to reference
     correctness = LangChainStringEvaluator(
-        "labeled_score_string",
+        "labeled_score_string", # Labeled evaluators compare prediction against a ground truth "reference"
         config={
             "criteria": {
                 "correctness": (
@@ -105,7 +150,7 @@ def _build_evaluators():
                     "compared to the reference answer?"
                 )
             },
-            "normalize_by": 10,
+            "normalize_by": 10, # LangChain scores are 1-10; dividing by 10 normalizes scores to [0.0, 1.0]
             "llm": judge_llm,
         },
         prepare_data=lambda run, example: {
@@ -115,8 +160,9 @@ def _build_evaluators():
         },
     )
 
+    # 2. Groundedness Evaluator: Grades whether the generated answer is strictly based on the context documents
     groundedness = LangChainStringEvaluator(
-        "score_string",
+        "score_string", # Unlabeled evaluator: grades output based on input context only (no reference needed)
         config={
             "criteria": {
                 "groundedness": (
@@ -129,6 +175,7 @@ def _build_evaluators():
         },
         prepare_data=lambda run, example: {
             "prediction": run.outputs.get("answer", ""),
+            # Construct the evaluation input containing both retrieved context documents and the user's question
             "input": (
                 "Source documents:\n"
                 + "\n---\n".join(run.outputs.get("source_documents", []))
@@ -137,8 +184,9 @@ def _build_evaluators():
         },
     )
 
+    # 3. Retrieval Relevance Evaluator: Grades whether retrieved chunks are relevant to the user query
     relevance = LangChainStringEvaluator(
-        "score_string",
+        "score_string", # Unlabeled evaluator: grades whether retrieved document texts match the query question
         config={
             "criteria": {
                 "relevance": (
@@ -150,6 +198,7 @@ def _build_evaluators():
             "llm": judge_llm,
         },
         prepare_data=lambda run, example: {
+            # Map retrieved chunks as the "prediction" text to evaluate
             "prediction": "\n---\n".join(run.outputs.get("source_documents", [])),
             "input": example.inputs.get("question", ""),
         },

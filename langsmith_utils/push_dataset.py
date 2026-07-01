@@ -222,16 +222,26 @@ EXAMPLES: list[dict] = [
 
 
 def push_dataset(client: Client | None = None) -> None:
-    """Create (or update) the evaluation dataset in LangSmith."""
+    """
+    Create (or update) the evaluation dataset in LangSmith.
+
+    This function does the following:
+      1. Instantiates a LangSmith Client to connect to the LangSmith backend.
+      2. Queries existing datasets to check if the target dataset already exists (ensuring idempotency).
+      3. Creates a new dataset if it does not exist.
+      4. Pushed the curated Q&A pairs as evaluation benchmark examples.
+    """
+    # 1. Initialize client: Client handles authentication using LANGSMITH_API_KEY env variable
     if client is None:
         client = Client()
 
-    # Check if dataset already exists
+    # 2. Check for existing dataset: prevents creating duplicate datasets on successive script runs
     existing = [d for d in client.list_datasets() if d.name == DATASET_NAME]
     if existing:
         print(f"[push_dataset] Dataset '{DATASET_NAME}' already exists — skipping creation.")
         dataset = existing[0]
     else:
+        # 3. Create dataset: creates the container in LangSmith UI under the Datasets & Testing tab
         dataset = client.create_dataset(
             dataset_name=DATASET_NAME,
             description=(
@@ -241,9 +251,10 @@ def push_dataset(client: Client | None = None) -> None:
         )
         print(f"[push_dataset] Created dataset '{DATASET_NAME}' (id={dataset.id})")
 
-    # Add examples
+    # 4. Add examples: Pushes inputs (what the RAG pipeline receives) and outputs (the expected ground truth)
     client.create_examples(
         dataset_id=dataset.id,
         examples=EXAMPLES,
     )
     print(f"[push_dataset] Pushed {len(EXAMPLES)} examples to '{DATASET_NAME}'")
+

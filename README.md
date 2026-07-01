@@ -17,7 +17,7 @@ A simple, end-to-end **Retrieval-Augmented Generation** (RAG) application wired 
 ### Pull Ollama models
 
 ```bash
-ollama pull llama3.2          # generation
+ollama pull llama3            # generation (e.g., llama3, llama3.2, or llama3:latest)
 ollama pull nomic-embed-text  # embeddings
 ```
 
@@ -115,6 +115,14 @@ rag-langsmith/
     ├── push_dataset.py        # Push dataset to LangSmith
     └── run_evaluation.py      # Run evaluation suite
 ```
+
+---
+
+## Compatibility & Technical Notes
+
+- **Modern LangChain & LangSmith Support**: Updated to work seamlessly with **LangChain 0.3+** and **LangSmith 0.9+**.
+- **Text Splitters**: Replaced deprecated `langchain.text_splitter` imports with `langchain_text_splitters`.
+- **Custom Evaluator Adapter**: Since `LangChainStringEvaluator` was deprecated and removed in LangSmith 0.9.3, we added a custom `LangChainStringEvaluator` wrapper in [evaluate.py](./langsmith_utils/evaluate.py). It uses `langchain_classic.evaluation.load_evaluator` under the hood to preserve the exact same LLM-as-a-judge grading pipeline structure.
 
 ---
 
