@@ -38,6 +38,13 @@ _llm: OllamaLLM | None = None
 
 
 def _get_llm() -> OllamaLLM:
+    """
+    Load and return a singleton instance of the Ollama LLM generator.
+    
+    Reusing a single instance of OllamaLLM prevents reloading the model settings
+    into memory on every user query. We set `temperature=0.0` to eliminate random
+    variance, which is essential for consistent and reliable automated evaluation.
+    """
     global _llm
     if _llm is None:
         _llm = OllamaLLM(
@@ -54,29 +61,36 @@ def _get_llm() -> OllamaLLM:
 @traceable(name="rag_pipeline")
 def rag_pipeline(question: str, retriever) -> dict:
     """
-    Run a single RAG turn.
+    Run a single Retrieval-Augmented Generation (RAG) turn.
+
+    The @traceable decorator wraps this execution block. When called, the LangSmith SDK
+    automatically spawns a trace session, recording the input question, nested steps (such as
+    document retrieval and LLM calls), execution latency, and the returned dictionary.
 
     Args:
-        question: The user's question.
-        retriever: A LangChain retriever (from get_retriever()).
+        question: The user's question string.
+        retriever: A LangChain retriever instance configured for similarity search.
 
     Returns:
-        dict with keys:
-            - "answer": the LLM's response string
-            - "source_documents": list of retrieved chunk texts
+        dict: A structured dictionary containing:
+            - "answer": The generated answer string.
+            - "source_documents": List of raw document chunk texts retrieved from ChromaDB.
     """
-    # Retrieve relevant chunks
+    # Step 1: Retrieve context chunks semantically similar to the input question from ChromaDB
     docs = retriever.invoke(question)
     source_texts = [d.page_content for d in docs]
 
-    # Build context string
+    # Step 2: Build a structured context block by joining retrieved text chunks
     context = "\n\n---\n\n".join(source_texts)
 
-    # Call LLM
+    # Step 3: Populate the RAG prompt template inserting both context and question
     prompt = RAG_PROMPT.format(context=context, question=question)
+    
+    # Step 4: Fetch the Ollama LLM generator and invoke it with the compiled prompt
     llm = _get_llm()
     answer: str = llm.invoke(prompt)
 
+    # Step 5: Return structured response containing the answer and source documents
     return {
         "answer": answer.strip(),
         "source_documents": source_texts,
